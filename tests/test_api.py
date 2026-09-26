@@ -590,6 +590,84 @@ class TestInvalid(util.TestCase):
         with self.assertRaises(TypeError):
             sv.filter('div', "not a tag", flags=flags)
 
+    def test_excessive_selectors(self):
+        """Test excessive selectors."""
+
+        # Build a 500 KB selector string: "a,a,a,...,a" (250,000 items)
+        count = 10000
+        selector = ",".join("a" for _ in range(count))
+
+        # Compile the selector
+        with self.assertRaises(ValueError):
+            sv.compile(selector)
+
+    def test_excessive_custom_selectors(self):
+        """Test excessive custom selectors."""
+
+        # Build a 500 KB selector string: "a,a,a,...,a" (250,000 items)
+        count = 10000
+        selector = ",".join("a" for _ in range(count))
+
+        # Compile the selector
+        with self.assertRaises(ValueError):
+            sv.compile('div:--custom', custom={':--custom': selector})
+
+    def test_excessive_custom_and_normal_selectors(self):
+        """Test excessive custom and normal selectors."""
+
+        count = 5000
+        selector = ",".join("a" for _ in range(count))
+
+        # Compile the selector
+        with self.assertRaises(ValueError):
+            sv.compile(':is({}):--custom'.format(selector), custom={':--custom': selector})
+
+    def test_selector_limit_boundary(self):
+        """Test that selectors up to the limit are allowed and one more is rejected."""
+
+        markup = '<div><a></a><b></b></div>'
+        soup = self.soup(markup, 'html.parser')
+
+        # Exactly at the limit is still allowed.
+        selector = ",".join("a" for _ in range(8192))
+        self.assertEqual(len(sv.compile(selector).select(soup)), 1)
+
+        # One more than the limit is rejected.
+        selector = ",".join("a" for _ in range(8193))
+        with self.assertRaises(ValueError):
+            sv.compile(selector)
+
+    def test_excessive_nested_custom_selectors(self):
+        """Test excessive selectors produced by chaining custom selectors."""
+
+        # Each custom selector references the previous one twice, doubling the
+        # effective number of selectors at every level.
+        custom = {':--c0': 'a, a'}
+        for i in range(1, 16):
+            custom[':--c{}'.format(i)] = ':--c{0}, :--c{0}'.format(i - 1)
+
+        with self.assertRaises(ValueError):
+            sv.compile('div:--c15', custom=custom)
+
+    def test_excessive_builtin_pseudo_class_selectors(self):
+        """Test excessive selectors produced by repeating built-in pseudo-classes."""
+
+        with self.assertRaises(ValueError):
+            sv.compile('input' + ':checked' * 1000)
+
+        with self.assertRaises(ValueError):
+            sv.compile('p' + ':nth-child(2)' * 5000)
+
+    def test_excessive_selectors_via_select(self):
+        """Test excessive selectors are rejected through the select API."""
+
+        markup = '<div><a></a></div>'
+        soup = self.soup(markup, 'html.parser')
+        selector = ",".join("a" for _ in range(10000))
+
+        with self.assertRaises(ValueError):
+            sv.select(selector, soup)
+
 
 class TestSyntaxErrorReporting(util.TestCase):
     """Test reporting of syntax errors."""
